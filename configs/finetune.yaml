@@ -26,9 +26,11 @@ optim:
   grad_clip: 1.0
 
 batch:
-  # PROVISIONAL, same caveat as pretrain.yaml — re-tune against real GPU memory
-  micro_batch_size: 4
-  grad_accum_steps: 32
+  # Same measured values as pretrain.yaml — see its comment. max_token_len
+  # here is slightly shorter (7168 vs 8192) so real memory use will be a
+  # little lower than the pretrain measurement at the same micro_batch_size.
+  micro_batch_size: 24
+  grad_accum_steps: 6
 
 precision: bf16
 max_steps: 3000

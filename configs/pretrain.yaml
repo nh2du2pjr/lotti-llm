@@ -20,12 +20,12 @@ optim:
   grad_clip: 1.0
 
 batch:
-  # PROVISIONAL: 8192-token sequences are far more memory-hungry per sample
-  # than the 1536 assumed when these defaults were first drafted. Re-tune
-  # micro_batch_size against real GPU memory at the start of M2 — this is a
-  # starting guess, not a measured value.
-  micro_batch_size: 4
-  grad_accum_steps: 32  # effective batch ~128
+  # Measured against the real card (RTX PRO 6000 Blackwell, 96GB) at M3
+  # kickoff: micro_batch_size 16/24/32 used 39.6/59.1/78.7GB peak. 24 leaves
+  # ~36GB headroom for eval-time generation + allocator fragmentation,
+  # rather than running the training step itself at ~83% of the card.
+  micro_batch_size: 24
+  grad_accum_steps: 6  # effective batch 144
 
 precision: bf16
 max_steps: 5000
