@@ -13,8 +13,8 @@ revisited).
 ## Status: M2 complete, M3 (full pretraining run) in progress
 
 **Right now (check this first):** a background data-fetch process is
-running on the Colab VM (RTX PRO 6000 Blackwell, 96GB, Colab Pro+, 24h
-sessions), started via:
+running on a Colab **CPU** runtime (deliberately switched off the GPU —
+see below), started via:
 
 ```
 nohup python -u -m lottiegpt.data.prepare_shards \
@@ -24,6 +24,12 @@ nohup python -u -m lottiegpt.data.prepare_shards \
   > /content/drive/MyDrive/lotti-llm-artifacts/m3_fetch_log.txt 2>&1 &
 ```
 
+- **Running on CPU, not GPU.** Colab disconnects a session after ~1h of
+  *GPU* idle time regardless of other activity, and this fetch is pure
+  network+CPU work — keeping the GPU (RTX PRO 6000 Blackwell, 96GB)
+  allocated and idle for the ~4h fetch would both waste quota and risk
+  exactly that disconnect. Switch back to a GPU runtime (G4) only once the
+  fetch+tokenize finishes and the actual training run is ready to start.
 - Target: 150k v1-supported animations (up from M2's ~10k smoke shard),
   scanning up to 300k raw rows to get there (~55% v1-support rate observed).
 - **Expect ~4-4.5 hours** for the fetch alone, at the ~18-20 rows/sec the
@@ -33,10 +39,13 @@ nohup python -u -m lottiegpt.data.prepare_shards \
   (must use `python -u`, unbuffered — a plain `python -m ...` redirected to
   a file buffers stdout and the log looks empty for a long time even though
   it's working; hit this once already, fixed by restarting with `-u`).
-- **It's resumable** (see gotcha #6 below) — if the Colab runtime resets
-  entirely (not just a frontend reconnect) partway through, just re-run the
-  exact same command above; it picks up from its last checkpointed record
-  rather than restarting the scan from offset 0.
+- **It's resumable, but not perfectly** (see gotcha #6 and especially #7
+  below) — re-running the exact same command picks up from the last
+  *Drive-synced* checkpoint, which lags behind the last *processed* record
+  because Colab's Drive mount buffers writes. A graceful stop (let it reach
+  a natural pause, or kill and wait a few seconds) before switching
+  runtimes loses far less than an abrupt VM termination does — already
+  lost ~10 minutes of scanning once switching GPU->CPU by not doing this.
 - Once the fetch finishes, `prepare_shards` tokenizes everything and writes
   `train_tokens.npy` / `val_tokens.npy` / `meta.json` to
   `/content/drive/MyDrive/lotti-llm-artifacts/shards/m3/` — then the actual
@@ -147,12 +156,24 @@ nohup python -u -m lottiegpt.data.prepare_shards \
    restarting from offset 0 (verified against the real API — second call
    with an already-met target returns instantly with no extra requests).
    `prepare_shards.py`'s `--source-jsonl` flag wires this in automatically.
-7. **Long-running background work should write to Drive, not `/content`.**
+7. **Long-running background work should write to Drive, not `/content`** —
+   but Drive-mounted writes are *not* immediately durable either.
    `/content` is wiped on a full runtime *reset* (as opposed to a mere
-   frontend reconnect, which is harmless — see gotcha #5). The M3 fetch
-   checkpoint, its log file, and the shard output all live under
-   `/content/drive/MyDrive/lotti-llm-artifacts/` for this reason — a reset
-   loses at most the batch in flight, not hours of scanning.
+   frontend reconnect, which is harmless — see gotcha #5), so the M3 fetch
+   checkpoint, log, and shard output all live under
+   `/content/drive/MyDrive/lotti-llm-artifacts/`. That helped, but did not
+   fully solve durability: Colab's Drive mount is a FUSE filesystem that
+   buffers writes locally before syncing to actual Drive storage, and an
+   *abrupt* VM termination (e.g. switching runtime type while a process is
+   still writing, rather than stopping it first) can lose whatever hadn't
+   synced yet. Hit this in practice deliberately switching GPU->CPU
+   mid-fetch (see "Status" — went from ~10k scanned back to a small
+   fraction) — not catastrophic this time (a few minutes of scanning, not
+   hours, since it happened early), but the lesson is: **before any
+   intentional runtime-type switch, gracefully stop background processes
+   that write to Drive and give them a few seconds before switching**,
+   rather than relying on the checkpoint alone to survive an abrupt
+   termination.
 
 ## Repo is public
 
