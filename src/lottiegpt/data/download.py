@@ -127,6 +127,7 @@ def fetch_filtered_sample(
     batch_size: int = 100,
     sleep_s: float = 1.0,
     progress_every: int = 20,
+    checkpoint_every: int = 20,
     checkpoint_path: str | Path | None = None,
 ) -> list[dict]:
     """Scan the dataset in order (offset 0, 100, 200, ...) and keep animations
@@ -135,11 +136,18 @@ def fetch_filtered_sample(
 
     A multi-hour fetch at M3 scale means a late, unrecoverable failure (all
     retries in `_fetch_batch_with_retry` exhausted) would otherwise discard
-    everything scanned so far. If `checkpoint_path` is given, every accepted
-    record is appended to that file immediately (not buffered until the end)
-    and scan position is persisted to `<checkpoint_path>.meta.json` after
-    every batch — so re-running with the same `checkpoint_path` resumes from
-    where it left off instead of re-scanning from offset 0."""
+    everything scanned so far. If `checkpoint_path` is given, the accepted
+    records are (over)written to that file, and scan position to
+    `<checkpoint_path>.meta.json`, every `checkpoint_every` batches — so
+    re-running with the same `checkpoint_path` resumes from the last sync
+    instead of re-scanning from offset 0.
+
+    Checkpointing does a full rewrite rather than an incremental append:
+    opening a file in append ("a") mode reliably raises
+    `OSError: [Errno 95] Operation not supported` on Colab's Google Drive
+    FUSE mount (hit this in practice — it silently worked for a while, then
+    killed a multi-hour background fetch outright). Plain write ("w") mode
+    is fine on that filesystem, so every sync rewrites the whole file."""
     kept: list[dict] = []
     offset = 0
     scanned = 0
@@ -154,7 +162,12 @@ def fetch_filtered_sample(
         print(f"resuming fetch from {ckpt_file}: {len(kept)} kept, {scanned} scanned, offset {offset}")
     elif ckpt_file:
         ckpt_file.parent.mkdir(parents=True, exist_ok=True)
-        ckpt_file.write_text("", encoding="utf-8")
+
+    def sync_checkpoint() -> None:
+        if not ckpt_file:
+            return
+        save_jsonl(kept, ckpt_file)
+        meta_file.write_text(json.dumps({"offset": offset, "scanned": scanned}), encoding="utf-8")
 
     while len(kept) < target_count and scanned < max_scanned:
         url = f"{ROWS_URL}&offset={offset}&length={batch_size}"
@@ -168,16 +181,14 @@ def fetch_filtered_sample(
             lj = json.loads(raw) if isinstance(raw, str) else raw
             if is_v1_supported(lj):
                 kept.append(lj)
-                if ckpt_file:
-                    with open(ckpt_file, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(lj) + "\n")
         offset += batch_size
         batches += 1
-        if meta_file:
-            meta_file.write_text(json.dumps({"offset": offset, "scanned": scanned}), encoding="utf-8")
         if batches % progress_every == 0:
             print(f"  scanned {scanned}, kept {len(kept)} ({100 * len(kept) / scanned:.0f}%)")
+        if batches % checkpoint_every == 0:
+            sync_checkpoint()
         time.sleep(sleep_s)
+    sync_checkpoint()
     return kept
 
 
