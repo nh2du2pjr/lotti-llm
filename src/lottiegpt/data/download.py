@@ -127,14 +127,35 @@ def fetch_filtered_sample(
     batch_size: int = 100,
     sleep_s: float = 1.0,
     progress_every: int = 20,
+    checkpoint_path: str | Path | None = None,
 ) -> list[dict]:
     """Scan the dataset in order (offset 0, 100, 200, ...) and keep animations
     matching `is_v1_supported`, until `target_count` are collected or
-    `max_scanned` rows have been examined."""
+    `max_scanned` rows have been examined.
+
+    A multi-hour fetch at M3 scale means a late, unrecoverable failure (all
+    retries in `_fetch_batch_with_retry` exhausted) would otherwise discard
+    everything scanned so far. If `checkpoint_path` is given, every accepted
+    record is appended to that file immediately (not buffered until the end)
+    and scan position is persisted to `<checkpoint_path>.meta.json` after
+    every batch — so re-running with the same `checkpoint_path` resumes from
+    where it left off instead of re-scanning from offset 0."""
     kept: list[dict] = []
     offset = 0
     scanned = 0
     batches = 0
+
+    ckpt_file = Path(checkpoint_path) if checkpoint_path else None
+    meta_file = ckpt_file.with_suffix(ckpt_file.suffix + ".meta.json") if ckpt_file else None
+    if ckpt_file and ckpt_file.exists() and meta_file and meta_file.exists():
+        kept = load_jsonl(ckpt_file)
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        offset, scanned = meta["offset"], meta["scanned"]
+        print(f"resuming fetch from {ckpt_file}: {len(kept)} kept, {scanned} scanned, offset {offset}")
+    elif ckpt_file:
+        ckpt_file.parent.mkdir(parents=True, exist_ok=True)
+        ckpt_file.write_text("", encoding="utf-8")
+
     while len(kept) < target_count and scanned < max_scanned:
         url = f"{ROWS_URL}&offset={offset}&length={batch_size}"
         data = _fetch_batch_with_retry(url)
@@ -147,8 +168,13 @@ def fetch_filtered_sample(
             lj = json.loads(raw) if isinstance(raw, str) else raw
             if is_v1_supported(lj):
                 kept.append(lj)
+                if ckpt_file:
+                    with open(ckpt_file, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(lj) + "\n")
         offset += batch_size
         batches += 1
+        if meta_file:
+            meta_file.write_text(json.dumps({"offset": offset, "scanned": scanned}), encoding="utf-8")
         if batches % progress_every == 0:
             print(f"  scanned {scanned}, kept {len(kept)} ({100 * len(kept) / scanned:.0f}%)")
         time.sleep(sleep_s)

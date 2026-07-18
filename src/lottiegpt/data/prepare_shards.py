@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from lottiegpt.data.download import fetch_filtered_sample, is_v1_supported, load_jsonl, save_jsonl
+from lottiegpt.data.download import fetch_filtered_sample
 from lottiegpt.tokenizer.lottie_tokenizer import LottieTokenizer, TokenizeError
 
 
@@ -70,15 +70,16 @@ def build_shard(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if source_jsonl is not None and Path(source_jsonl).exists():
-        records = load_jsonl(source_jsonl)
-        records = [r for r in records if is_v1_supported(r)]
+    # over-fetch: some fraction of v1-supported animations will still be
+    # dropped below for exceeding max_token_len (see tokenize_corpus). When
+    # source_jsonl is given, fetch_filtered_sample uses it as a resumable
+    # checkpoint (appends as it goes + persists scan position) — re-running
+    # with the same path picks up where a crashed/interrupted fetch left
+    # off, or returns instantly if it already reached num_samples.
+    if source_jsonl is not None:
+        records = fetch_filtered_sample(num_samples, max_scanned=max_scanned, checkpoint_path=source_jsonl)
     else:
-        # over-fetch: some fraction of v1-supported animations will still be
-        # dropped below for exceeding max_token_len (see tokenize_corpus)
         records = fetch_filtered_sample(num_samples, max_scanned=max_scanned)
-        if source_jsonl is not None:
-            save_jsonl(records, source_jsonl)
 
     rng = np.random.default_rng(seed)
     ids = np.arange(len(records))
