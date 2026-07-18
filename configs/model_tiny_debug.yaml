@@ -1,0 +1,13 @@
+# Not the real architecture — tiny dims + short context purely so the
+# training pipeline (data loading, optimizer, eval, checkpoint/resume) can be
+# exercised end-to-end on a CPU in seconds, before running the real
+# model_small.yaml smoke test on Colab's GPU.
+vocab_size: 3915
+d_model: 64
+n_layer: 2
+n_head: 2
+ffn_dim: 128
+max_seq_len: 512
+dropout: 0.0
+tie_embeddings: true
+rope: true

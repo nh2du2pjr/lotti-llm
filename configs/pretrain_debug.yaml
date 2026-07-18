@@ -1,0 +1,29 @@
+model_config: configs/model_tiny_debug.yaml
+tokenizer_config: configs/tokenizer.yaml
+
+dataset:
+  hf_name: OmniLottie/MMLottie-2M
+  hf_config: Lottie
+  max_token_len: 512
+  val_fraction: 0.1
+  split_by: id
+
+num_samples: 300
+
+optim:
+  lr: 3.0e-4
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  warmup_steps: 5
+  grad_clip: 1.0
+
+batch:
+  micro_batch_size: 4
+  grad_accum_steps: 2
+
+precision: fp32
+max_steps: 30
+eval_every: 10
+checkpoint_every_minutes: 1000  # effectively "only at the end" for this smoke test
+checkpoint_dir: data/checkpoints_debug
+keep_last_n_checkpoints: 2
