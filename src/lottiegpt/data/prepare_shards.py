@@ -61,6 +61,7 @@ def build_shard(
     val_fraction: float = 0.03,
     seed: int = 0,
     source_jsonl: str | Path | None = None,
+    max_scanned: int = 20000,
 ) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +70,9 @@ def build_shard(
         records = load_jsonl(source_jsonl)
         records = [r for r in records if is_v1_supported(r)]
     else:
-        records = fetch_filtered_sample(num_samples)
+        # over-fetch: some fraction of v1-supported animations will still be
+        # dropped below for exceeding max_token_len (see tokenize_corpus)
+        records = fetch_filtered_sample(num_samples, max_scanned=max_scanned)
         if source_jsonl is not None:
             save_jsonl(records, source_jsonl)
 
@@ -107,6 +110,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-samples", type=int, default=30000)
     parser.add_argument("--max-token-len", type=int, default=8192)
     parser.add_argument("--source-jsonl", type=str, default=None)
+    parser.add_argument("--max-scanned", type=int, default=20000)
     args = parser.parse_args()
 
     build_shard(
@@ -114,4 +118,5 @@ if __name__ == "__main__":
         num_samples=args.num_samples,
         max_token_len=args.max_token_len,
         source_jsonl=args.source_jsonl,
+        max_scanned=args.max_scanned,
     )
