@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -92,11 +93,30 @@ def is_v1_supported(lottie_json: dict) -> bool:
     return True
 
 
+def _fetch_batch_with_retry(url: str, max_retries: int = 5, timeout: int = 30) -> dict:
+    """The datasets-server API occasionally returns a transient 5xx under
+    sustained pagination load; without a retry, one bad batch after minutes
+    of scanning throws away all progress (this happened in practice — a
+    single HTTP 500 killed a ~6 minute fetch)."""
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                return json.load(resp)
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last_error = e
+            backoff = min(2 ** attempt, 30)
+            print(f"  [retry {attempt + 1}/{max_retries}] {e} — retrying in {backoff}s")
+            time.sleep(backoff)
+    raise RuntimeError(f"giving up after {max_retries} retries") from last_error
+
+
 def fetch_filtered_sample(
     target_count: int,
     max_scanned: int = 20000,
     batch_size: int = 100,
     sleep_s: float = 0.2,
+    progress_every: int = 20,
 ) -> list[dict]:
     """Scan the dataset in order (offset 0, 100, 200, ...) and keep animations
     matching `is_v1_supported`, until `target_count` are collected or
@@ -104,10 +124,10 @@ def fetch_filtered_sample(
     kept: list[dict] = []
     offset = 0
     scanned = 0
+    batches = 0
     while len(kept) < target_count and scanned < max_scanned:
         url = f"{ROWS_URL}&offset={offset}&length={batch_size}"
-        with urllib.request.urlopen(url, timeout=30) as resp:
-            data = json.load(resp)
+        data = _fetch_batch_with_retry(url)
         rows = data.get("rows", [])
         if not rows:
             break
@@ -118,6 +138,9 @@ def fetch_filtered_sample(
             if is_v1_supported(lj):
                 kept.append(lj)
         offset += batch_size
+        batches += 1
+        if batches % progress_every == 0:
+            print(f"  scanned {scanned}, kept {len(kept)} ({100 * len(kept) / scanned:.0f}%)")
         time.sleep(sleep_s)
     return kept
 
