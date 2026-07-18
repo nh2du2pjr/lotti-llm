@@ -133,7 +133,8 @@ def main() -> None:
 
         if step % args.log_every == 0:
             dt = time.time() - t0
-            print(f"step {step:6d} | loss {accum_loss:.4f} | lr {lr:.2e} | {dt:.1f}s")
+            mem = f" | gpu {torch.cuda.max_memory_allocated() / 1e9:.1f}GB" if device == "cuda" else ""
+            print(f"step {step:6d} | loss {accum_loss:.4f} | lr {lr:.2e} | {dt:.1f}s{mem}")
             t0 = time.time()
 
         if step % cfg["eval_every"] == 0 and step > 0:
