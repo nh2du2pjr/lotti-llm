@@ -93,16 +93,26 @@ def is_v1_supported(lottie_json: dict) -> bool:
     return True
 
 
-def _fetch_batch_with_retry(url: str, max_retries: int = 5, timeout: int = 30) -> dict:
+def _fetch_batch_with_retry(url: str, max_retries: int = 8, timeout: int = 30) -> dict:
     """The datasets-server API occasionally returns a transient 5xx under
-    sustained pagination load; without a retry, one bad batch after minutes
-    of scanning throws away all progress (this happened in practice — a
-    single HTTP 500 killed a ~6 minute fetch)."""
+    sustained pagination load, and rate-limits (429) unauthenticated clients
+    making frequent requests — without a retry, one bad batch after minutes
+    of scanning throws away all progress (this happened in practice twice:
+    once on a 500, once on sustained 429s)."""
     last_error: Exception | None = None
     for attempt in range(max_retries):
         try:
             with urllib.request.urlopen(url, timeout=timeout) as resp:
                 return json.load(resp)
+        except urllib.error.HTTPError as e:
+            last_error = e
+            retry_after = e.headers.get("Retry-After") if e.headers else None
+            if e.code == 429:
+                backoff = float(retry_after) if retry_after else min(10 * (attempt + 1), 90)
+            else:
+                backoff = min(2 ** attempt, 30)
+            print(f"  [retry {attempt + 1}/{max_retries}] HTTP {e.code} — retrying in {backoff:.0f}s")
+            time.sleep(backoff)
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             last_error = e
             backoff = min(2 ** attempt, 30)
@@ -115,7 +125,7 @@ def fetch_filtered_sample(
     target_count: int,
     max_scanned: int = 20000,
     batch_size: int = 100,
-    sleep_s: float = 0.2,
+    sleep_s: float = 1.0,
     progress_every: int = 20,
 ) -> list[dict]:
     """Scan the dataset in order (offset 0, 100, 200, ...) and keep animations
