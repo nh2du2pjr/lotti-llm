@@ -197,7 +197,7 @@ def _classify_numeric(key: str, ctx: _Ctx) -> tuple[str, str] | tuple[str, None]
         return ("numeric", "count_int")  # repeater copies
     if key == "c":
         return ("numeric", "color_channel")
-    if key in ("or", "os", "ir", "is", "ml"):
+    if key in ("or", "os", "ir", "is", "ml", "ml2"):
         return ("numeric", "misc_scalar")
     if key == "w" and ctx.shape_ty in ("st", "gs"):
         return ("numeric", "stroke_width")
@@ -256,7 +256,7 @@ def _property_family_for_key(outer_key: str, shape_ty: str | None) -> str:
         return "count_int" if shape_ty == "rp" else "color_channel"
     if outer_key == "w":
         return "stroke_width" if shape_ty in ("st", "gs") else "misc_scalar"
-    if outer_key in ("or", "os", "ir", "is", "ml", "g"):
+    if outer_key in ("or", "os", "ir", "is", "ml", "ml2", "g"):
         return "misc_scalar"
     if outer_key == "pt":
         return "count_int"

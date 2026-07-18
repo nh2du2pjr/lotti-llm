@@ -35,7 +35,11 @@ def tokenize_corpus(
     for rec in records:
         try:
             ids = tokenizer.encode(rec)
-        except TokenizeError:
+        except (TokenizeError, KeyError):
+            # KeyError catches any Bodymovin field the schema hasn't been
+            # taught yet (e.g. "ml2" surfaced only after scanning ~10k real
+            # animations) — one record's unfamiliar field shouldn't crash a
+            # multi-minute tokenization pass over the rest of the corpus.
             n_dropped_error += 1
             continue
         if len(ids) > max_token_len:

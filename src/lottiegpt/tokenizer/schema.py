@@ -95,8 +95,9 @@ STRUCTURAL_KEYS = [
     "k", "t", "i", "e", "to", "ti", "h", "x", "y",
     # shape: path
     "c", "v",
-    # shape: fill / stroke
-    "w", "lc", "lj", "ml", "d", "n",
+    # shape: fill / stroke ("ml2" is the animatable-property companion to
+    # the static "ml" miter-limit fallback some exporters emit for old players)
+    "w", "lc", "lj", "ml", "ml2", "d", "n",
     # shape: merge paths
     "mm",
     # shape: trim path
