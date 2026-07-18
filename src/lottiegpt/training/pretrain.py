@@ -61,9 +61,15 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", type=str, default=None)
     parser.add_argument("--resume-from-checkpoint", type=str, default=None)
     parser.add_argument("--log-every", type=int, default=20)
+    parser.add_argument("--micro-batch-size", type=int, default=None, help="override batch.micro_batch_size")
+    parser.add_argument("--grad-accum-steps", type=int, default=None, help="override batch.grad_accum_steps")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    if args.micro_batch_size is not None:
+        cfg["batch"]["micro_batch_size"] = args.micro_batch_size
+    if args.grad_accum_steps is not None:
+        cfg["batch"]["grad_accum_steps"] = args.grad_accum_steps
     model_cfg = ModelConfig.from_yaml(cfg["model_config"])
     max_steps = args.max_steps or cfg["max_steps"]
     checkpoint_dir = Path(args.checkpoint_dir or cfg["checkpoint_dir"])
