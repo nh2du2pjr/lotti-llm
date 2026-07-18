@@ -6,9 +6,10 @@ venv/
 build/
 dist/
 
-# large / generated artifacts — these live on Drive during Colab runs, not in git
-data/raw/
-data/shards/
+# dataset content (CC-BY-NC-SA-4.0 licensed, not ours to redistribute) and other
+# generated artifacts — these live on Drive during Colab runs / are regenerated
+# locally via scripts, never committed
+/data/
 checkpoints/
 *.ckpt
 *.pt

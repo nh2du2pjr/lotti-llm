@@ -1,10 +1,12 @@
 # ~33M parameter decoder-only transformer (see plan for param math)
-vocab_size: 3584
+vocab_size: 3915  # calibrated in M1, see configs/tokenizer.yaml
 d_model: 512
 n_layer: 10
 n_head: 8
 ffn_dim: 2048
-max_seq_len: 2048
+max_seq_len: 2048  # PROVISIONAL — M1 found real token lengths (p50=3813, p90=19588)
+                    # far exceed this; unresolved pending an M2-start decision,
+                    # see configs/tokenizer.yaml's note
 dropout: 0.0
 tie_embeddings: true
 rope: true

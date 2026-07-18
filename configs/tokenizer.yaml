@@ -1,36 +1,43 @@
-# Placeholder budget from planning stage — refined in M1 once real key/enum
-# cardinality and per-parameter percentiles are measured on a live sample.
-vocab_size: 3584
+# Snapshot of the M1-calibrated tokenizer, for reference only.
+#
+# The actual source of truth is code, not this file: numeric family ranges
+# live in src/lottiegpt/tokenizer/schema.py (NUMERIC_FAMILIES), and family
+# selection has real conditional logic (e.g. a bare "s" key means different
+# things under a transform vs. an ellipse vs. a trim path) that doesn't fit a
+# flat YAML schema — see lottie_tokenizer.py's _classify_numeric /
+# _property_family_for_key. This file is not loaded by any script; it exists
+# so the calibrated numbers are visible without reading the code.
+#
+# Calibrated against 332 real animations (data/fixtures/sample_lottie.jsonl,
+# regenerate via `python -m lottiegpt.data.download`) — see
+# scripts/round_trip_check.py for the full per-family report.
 
-special_tokens: 20
+vocab_size: 3915  # special(10) + keys(~50) + enums(~48) + numeric(~2895) + text_subvocab(1450)
 
-# Numeric quantization: token(x, t) = floor(x * scale_t) + offset_t
-# ranges/bins below are starting points, to be recalibrated in M1.
-numeric_params:
-  position:
-    range: [-1.5, 2.5]  # multiples of canvas dimension, allows off-canvas keyframes
-    bins: 512
-  scale_pct:
-    range: [0, 500]
-    bins: 192
-  rotation_deg:
-    range: [-1080, 1080]
-    bins: 256
-  opacity_pct:
-    range: [0, 100]
-    bins: 96
-  time_fraction:
-    range: [0, 1]
-    bins: 256
-  color_channel:
-    range: [0, 1]
-    bins: 64  # x4 channels (r,g,b,a) = 256
-  bezier_handle:
-    range: [0, 1]
-    bins: 128
+numeric_families:
+  position:      {kind: quant_float, range: [-3000, 3000], bins: 384}
+  scale_pct:     {kind: quant_float, range: [-200, 500],   bins: 192}
+  rotation_deg:  {kind: quant_float, range: [-1080, 1080], bins: 256}
+  percent:       {kind: quant_float, range: [-50, 150],    bins: 128}
+  color_channel: {kind: quant_float, range: [0, 1],        bins: 64}
+  stroke_width:  {kind: quant_float, range: [0, 200],      bins: 96}
+  easing:        {kind: quant_float, range: [-0.5, 1.5],   bins: 64}
+  misc_scalar:   {kind: quant_float, range: [-50, 1000],   bins: 192}
+  count_int:     {kind: exact_int,   range: [-5, 150]}
+  time_frame:    {kind: exact_int,   range: [-100, 600]}
+  frame_rate:    {kind: exact_int,   range: [8, 120]}
 
-structural_tokens_budget: 450  # BEGIN/END, keys, enums (Bodymovin schema)
-text_subvocab_budget: 1450     # reserved range for SentencePiece text tokenizer (M4)
+text_subvocab_size: 1450  # reserved range, populated by the SentencePiece text tokenizer in M4
 
-max_seq_len_lottie: 1536
-max_seq_len_total: 2048  # includes text prefix for finetuning stage
+max_seq_len_lottie: 1536   # p90 token length observed: ~19.6k (!) — see note below
+max_seq_len_total: 2048
+
+# NOTE for M2/M3: observed token-length p50=3813, p90=19588 on the 332-sample
+# fixture — well above the 1536 assumed during planning. The v1 schema (no
+# masks/effects/mattes/expressions) already trims complexity, but shape-heavy
+# icon animations with many path vertices and per-keyframe easing still run
+# long. Before committing to a training max_seq_len, re-measure on a larger
+# sample and decide between: raising max_seq_len (cost: quadratic attention,
+# though small at this model size), filtering out the long tail, or a coarser
+# path-vertex encoding (e.g. dropping bezier handles for near-straight
+# segments). Tracked as a to-do at the start of M2.
