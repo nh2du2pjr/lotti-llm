@@ -39,13 +39,24 @@ nohup python -u -m lottiegpt.data.prepare_shards \
   (must use `python -u`, unbuffered — a plain `python -m ...` redirected to
   a file buffers stdout and the log looks empty for a long time even though
   it's working; hit this once already, fixed by restarting with `-u`).
-- **It's resumable, but not perfectly** (see gotcha #6 and especially #7
+- **It's resumable, but not perfectly** (see gotcha #6 and especially #7/#8
   below) — re-running the exact same command picks up from the last
   *Drive-synced* checkpoint, which lags behind the last *processed* record
   because Colab's Drive mount buffers writes. A graceful stop (let it reach
   a natural pause, or kill and wait a few seconds) before switching
   runtimes loses far less than an abrupt VM termination does — already
   lost ~10 minutes of scanning once switching GPU->CPU by not doing this.
+- **Restarted from scratch once already** (~02:17) after the checkpoint
+  file itself vanished mid-run — turned out Drive's FUSE mount doesn't
+  support append-mode file writes at all (not just eventually-consistent,
+  genuinely unsupported — `OSError: [Errno 95] Operation not supported`),
+  which is what the original per-record-append design relied on. Fixed in
+  `download.py` to periodically rewrite the whole checkpoint file instead
+  (see gotcha #8) — verified the fix survives a full checkpoint cycle
+  before writing this. If the log/checkpoint looks stale, first check
+  whether the background process is even still alive
+  (`ps aux | grep prepare_shards`) rather than assuming it's just slow —
+  it silently died here and sat crashed for a while before being noticed.
 - Once the fetch finishes, `prepare_shards` tokenizes everything and writes
   `train_tokens.npy` / `val_tokens.npy` / `meta.json` to
   `/content/drive/MyDrive/lotti-llm-artifacts/shards/m3/` — then the actual
@@ -150,11 +161,11 @@ nohup python -u -m lottiegpt.data.prepare_shards \
    only buffers results in memory and saves once at the end loses *all*
    progress if it dies late (hit this once on a genuine HTTP failure after
    ~16 minutes of scanning). `fetch_filtered_sample` now takes a
-   `checkpoint_path`: it appends each accepted record to that file
-   immediately and persists scan offset to a `.meta.json` sidecar after
-   every batch, so re-running the identical command resumes instead of
-   restarting from offset 0 (verified against the real API — second call
-   with an already-met target returns instantly with no extra requests).
+   `checkpoint_path` and periodically syncs progress there (see gotcha #8
+   for why it's a periodic full rewrite and not a per-record append), so
+   re-running the identical command resumes instead of restarting from
+   offset 0 (verified against the real API — second call with an
+   already-met target returns instantly with no extra requests).
    `prepare_shards.py`'s `--source-jsonl` flag wires this in automatically.
 7. **Long-running background work should write to Drive, not `/content`** —
    but Drive-mounted writes are *not* immediately durable either.
@@ -174,6 +185,24 @@ nohup python -u -m lottiegpt.data.prepare_shards \
    that write to Drive and give them a few seconds before switching**,
    rather than relying on the checkpoint alone to survive an abrupt
    termination.
+8. **Google Drive's FUSE mount does not support append-mode file writes —
+   at all, not just unreliably.** The original checkpoint design
+   (`open(path, "a")` per accepted record) worked for a while — the log
+   showed it advancing normally, `wc -l` on the checkpoint file matched
+   expectations — then died outright with `OSError: [Errno 95] Operation
+   not supported`, and the checkpoint *file itself* subsequently
+   disappeared entirely even though `.meta.json` (written with plain `"w"`
+   mode) still showed a much later offset. Whatever Drive's FUSE layer
+   does once a file gets "committed" to real cloud storage apparently
+   breaks further appends outright, not just slowly. Fixed by never
+   opening in append mode: `fetch_filtered_sample` now keeps `kept` in
+   memory and periodically **rewrites the whole checkpoint file** (`"w"`
+   mode, which *is* reliable on this filesystem) every `checkpoint_every`
+   batches, trading a bit of I/O overhead as the file grows for actually
+   working. Lost the entire first M3 fetch attempt (~28k scanned) to this
+   before catching it — **if a long Drive-writing background process on
+   Colab looks stalled, check whether it's actually still running
+   (`ps aux`) before assuming it's just slow.**
 
 ## Repo is public
 
