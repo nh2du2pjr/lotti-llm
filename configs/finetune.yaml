@@ -1,0 +1,35 @@
+model_config: configs/model_small.yaml
+tokenizer_config: configs/tokenizer.yaml
+
+init_from_checkpoint: /content/drive/MyDrive/lotti-llm-artifacts/checkpoints/pretrain/best.pt
+
+dataset:
+  hf_name: OmniLottie/MMLottie-2M
+  hf_config: Lottie
+  caption_fields: [desc_en, detail]
+  max_token_len: 1536
+  val_fraction: 0.03
+  split_by: id
+
+text_tokenizer:
+  vocab_size: 1450
+  model_path: /content/drive/MyDrive/lotti-llm-artifacts/text_tokenizer.model
+  byte_fallback: true
+
+optim:
+  lr: 5.0e-5
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  warmup_steps: 200
+  grad_clip: 1.0
+
+batch:
+  micro_batch_size: 16
+  grad_accum_steps: 8
+
+precision: bf16
+max_steps: 3000
+eval_every: 200
+checkpoint_every_minutes: 20
+checkpoint_dir: /content/drive/MyDrive/lotti-llm-artifacts/checkpoints/finetune
+keep_last_n_checkpoints: 3

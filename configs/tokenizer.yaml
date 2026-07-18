@@ -1,0 +1,36 @@
+# Placeholder budget from planning stage — refined in M1 once real key/enum
+# cardinality and per-parameter percentiles are measured on a live sample.
+vocab_size: 3584
+
+special_tokens: 20
+
+# Numeric quantization: token(x, t) = floor(x * scale_t) + offset_t
+# ranges/bins below are starting points, to be recalibrated in M1.
+numeric_params:
+  position:
+    range: [-1.5, 2.5]  # multiples of canvas dimension, allows off-canvas keyframes
+    bins: 512
+  scale_pct:
+    range: [0, 500]
+    bins: 192
+  rotation_deg:
+    range: [-1080, 1080]
+    bins: 256
+  opacity_pct:
+    range: [0, 100]
+    bins: 96
+  time_fraction:
+    range: [0, 1]
+    bins: 256
+  color_channel:
+    range: [0, 1]
+    bins: 64  # x4 channels (r,g,b,a) = 256
+  bezier_handle:
+    range: [0, 1]
+    bins: 128
+
+structural_tokens_budget: 450  # BEGIN/END, keys, enums (Bodymovin schema)
+text_subvocab_budget: 1450     # reserved range for SentencePiece text tokenizer (M4)
+
+max_seq_len_lottie: 1536
+max_seq_len_total: 2048  # includes text prefix for finetuning stage

@@ -1,0 +1,30 @@
+model_config: configs/model_small.yaml
+tokenizer_config: configs/tokenizer.yaml
+
+dataset:
+  hf_name: OmniLottie/MMLottie-2M
+  hf_config: Lottie  # native subset only; SVG-derived subset deferred (M5)
+  max_token_len: 1536
+  val_fraction: 0.03
+  split_by: id
+
+# M2 smoke test defaults — override via --num-samples for M3 full run
+num_samples: 30000
+
+optim:
+  lr: 3.0e-4
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  warmup_steps: 500
+  grad_clip: 1.0
+
+batch:
+  micro_batch_size: 16
+  grad_accum_steps: 8  # effective batch ~128
+
+precision: bf16
+max_steps: 5000
+eval_every: 250
+checkpoint_every_minutes: 20
+checkpoint_dir: /content/drive/MyDrive/lotti-llm-artifacts/checkpoints/pretrain
+keep_last_n_checkpoints: 3
