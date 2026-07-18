@@ -1,5 +1,6 @@
 # ~33M parameter decoder-only transformer (see plan for param math)
-vocab_size: 3915  # calibrated in M1, see configs/tokenizer.yaml
+vocab_size: 3916  # calibrated in M1, see configs/tokenizer.yaml (bumped from
+                   # 3915 after "ml2" was added to schema.STRUCTURAL_KEYS)
 d_model: 512
 n_layer: 10
 n_head: 8

@@ -12,7 +12,7 @@
 # regenerate via `python -m lottiegpt.data.download`) — see
 # scripts/round_trip_check.py for the full per-family report.
 
-vocab_size: 3915  # special(10) + keys(~50) + enums(~48) + numeric(~2895) + text_subvocab(1450)
+vocab_size: 3916  # special(10) + keys(~51) + enums(~48) + numeric(~2895) + text_subvocab(1450)
 
 numeric_families:
   position:      {kind: quant_float, range: [-3000, 3000], bins: 384}
