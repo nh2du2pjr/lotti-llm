@@ -4,7 +4,8 @@ tokenizer_config: configs/tokenizer.yaml
 dataset:
   hf_name: OmniLottie/MMLottie-2M
   hf_config: Lottie  # native subset only; SVG-derived subset deferred (M5)
-  max_token_len: 1536
+  max_token_len: 8192  # ~72% of v1-supported animations fit losslessly; longer
+                        # ones are filtered out of the corpus, not truncated
   val_fraction: 0.03
   split_by: id
 
@@ -19,8 +20,12 @@ optim:
   grad_clip: 1.0
 
 batch:
-  micro_batch_size: 16
-  grad_accum_steps: 8  # effective batch ~128
+  # PROVISIONAL: 8192-token sequences are far more memory-hungry per sample
+  # than the 1536 assumed when these defaults were first drafted. Re-tune
+  # micro_batch_size against real GPU memory at the start of M2 — this is a
+  # starting guess, not a measured value.
+  micro_batch_size: 4
+  grad_accum_steps: 32  # effective batch ~128
 
 precision: bf16
 max_steps: 5000

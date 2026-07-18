@@ -29,15 +29,14 @@ numeric_families:
 
 text_subvocab_size: 1450  # reserved range, populated by the SentencePiece text tokenizer in M4
 
-max_seq_len_lottie: 1536   # p90 token length observed: ~19.6k (!) — see note below
-max_seq_len_total: 2048
+max_seq_len_lottie: 8192   # covers ~72% of the fixture corpus losslessly (decided
+                            # over raising further or shrinking the tokenizer —
+                            # see configs/pretrain.yaml); the rest are filtered
+                            # out of the training corpus, not truncated
+max_seq_len_total: 8192    # pretrain uses the full window for Lottie tokens;
+                            # finetune reserves ~1024 of it for the text prefix
+                            # (configs/finetune.yaml's max_token_len: 7168)
 
-# NOTE for M2/M3: observed token-length p50=3813, p90=19588 on the 332-sample
-# fixture — well above the 1536 assumed during planning. The v1 schema (no
-# masks/effects/mattes/expressions) already trims complexity, but shape-heavy
-# icon animations with many path vertices and per-keyframe easing still run
-# long. Before committing to a training max_seq_len, re-measure on a larger
-# sample and decide between: raising max_seq_len (cost: quadratic attention,
-# though small at this model size), filtering out the long tail, or a coarser
-# path-vertex encoding (e.g. dropping bezier handles for near-straight
-# segments). Tracked as a to-do at the start of M2.
+# Re-measure this distribution on a larger sample once M2 actually tokenizes
+# shards — 332 animations is enough to calibrate quantization ranges but is a
+# small base for a p90/mean estimate.

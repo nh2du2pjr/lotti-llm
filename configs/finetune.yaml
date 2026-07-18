@@ -7,7 +7,9 @@ dataset:
   hf_name: OmniLottie/MMLottie-2M
   hf_config: Lottie
   caption_fields: [desc_en, detail]
-  max_token_len: 1536
+  max_token_len: 7168  # leaves ~1024 tokens of the 8192 model context for the
+                        # text prefix (model_small.yaml); re-check actual
+                        # caption lengths once the text tokenizer exists (M4)
   val_fraction: 0.03
   split_by: id
 
@@ -24,8 +26,9 @@ optim:
   grad_clip: 1.0
 
 batch:
-  micro_batch_size: 16
-  grad_accum_steps: 8
+  # PROVISIONAL, same caveat as pretrain.yaml — re-tune against real GPU memory
+  micro_batch_size: 4
+  grad_accum_steps: 32
 
 precision: bf16
 max_steps: 3000
