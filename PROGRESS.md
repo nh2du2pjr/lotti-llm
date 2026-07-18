@@ -10,7 +10,39 @@ See `README.md` for the CC-BY-NC-SA-4.0 data-license constraint (this
 project is research/personal-use scope, not commercial, unless that's
 revisited).
 
-## Status: M2 complete, M3 (full pretraining run) starting
+## Status: M2 complete, M3 (full pretraining run) in progress
+
+**Right now (check this first):** a background data-fetch process is
+running on the Colab VM (RTX PRO 6000 Blackwell, 96GB, Colab Pro+, 24h
+sessions), started via:
+
+```
+nohup python -u -m lottiegpt.data.prepare_shards \
+  --out-dir /content/drive/MyDrive/lotti-llm-artifacts/shards/m3 \
+  --num-samples 150000 --max-scanned 300000 --max-token-len 8192 \
+  --source-jsonl /content/drive/MyDrive/lotti-llm-artifacts/raw_cache/m3_raw.jsonl \
+  > /content/drive/MyDrive/lotti-llm-artifacts/m3_fetch_log.txt 2>&1 &
+```
+
+- Target: 150k v1-supported animations (up from M2's ~10k smoke shard),
+  scanning up to 300k raw rows to get there (~55% v1-support rate observed).
+- **Expect ~4-4.5 hours** for the fetch alone, at the ~18-20 rows/sec the
+  `datasets-server` rows API sustains (see gotcha #2 below) — this is the
+  dominant bottleneck, not compute.
+- Check progress: `!tail -30 /content/drive/MyDrive/lotti-llm-artifacts/m3_fetch_log.txt`
+  (must use `python -u`, unbuffered — a plain `python -m ...` redirected to
+  a file buffers stdout and the log looks empty for a long time even though
+  it's working; hit this once already, fixed by restarting with `-u`).
+- **It's resumable** (see gotcha #6 below) — if the Colab runtime resets
+  entirely (not just a frontend reconnect) partway through, just re-run the
+  exact same command above; it picks up from its last checkpointed record
+  rather than restarting the scan from offset 0.
+- Once the fetch finishes, `prepare_shards` tokenizes everything and writes
+  `train_tokens.npy` / `val_tokens.npy` / `meta.json` to
+  `/content/drive/MyDrive/lotti-llm-artifacts/shards/m3/` — then the actual
+  training run (`lottiegpt.training.pretrain --shard-dir
+  .../shards/m3 --checkpoint-dir .../checkpoints/pretrain`) is the next step,
+  not yet started as of this writing.
 
 - **M0** — repo scaffold, packaging, GitHub remote (`nh2du2pjr/lotti-llm`,
   public — see "Repo is public" below).
@@ -50,10 +82,15 @@ revisited).
   p90=19588 on the calibration sample. 8192 covers ~72% of animations
   losslessly; longer ones are **filtered out of training, not truncated**
   (truncation would teach the model that cut-off JSON is normal output).
-- **GPU is barely utilized**: the M2 smoke test used only ~10.5GB of the
-  96GB card at `micro_batch_size=4`. There is a lot of headroom to push
-  batch size up for M3 — see the "M3 kickoff checklist" below, this is an
-  open TODO being addressed now.
+- **`micro_batch_size` measured, not guessed**: probed 16/24/32 directly
+  against the real card at `max_seq_len=8192` — 39.6GB / 59.1GB / 78.7GB
+  peak. Settled on **24** (`configs/pretrain.yaml` and `finetune.yaml`),
+  leaving ~36GB headroom for eval-time generation + allocator
+  fragmentation rather than running training itself at ~83% of the card.
+  48 OOM'd outright. `pretrain.py` now logs peak GPU memory alongside
+  loss/lr (`--device cuda` runs only) and exposes `--micro-batch-size`/
+  `--grad-accum-steps` CLI overrides specifically so this kind of probing
+  doesn't require editing the config file each time.
 
 ## Gotchas hit in practice (fixed, but worth knowing about)
 
@@ -95,6 +132,27 @@ revisited).
    dialog (just click reconnect — the underlying VM and its disk survive;
    in-progress data on `/content` is safe as long as you don't restart the
    runtime, only reconnect the frontend).
+6. **A background fetch needs `python -u` and resumable checkpointing, or
+   a late failure loses everything.** Two separate incidents drove this:
+   (a) redirecting `python -m ...` output to a log file with plain
+   buffering meant `tail`/`cat` on the log showed nothing for a long time
+   even though the process was working — fixed by running `python -u`
+   (unbuffered) whenever output needs to be watched live; (b) a fetch that
+   only buffers results in memory and saves once at the end loses *all*
+   progress if it dies late (hit this once on a genuine HTTP failure after
+   ~16 minutes of scanning). `fetch_filtered_sample` now takes a
+   `checkpoint_path`: it appends each accepted record to that file
+   immediately and persists scan offset to a `.meta.json` sidecar after
+   every batch, so re-running the identical command resumes instead of
+   restarting from offset 0 (verified against the real API — second call
+   with an already-met target returns instantly with no extra requests).
+   `prepare_shards.py`'s `--source-jsonl` flag wires this in automatically.
+7. **Long-running background work should write to Drive, not `/content`.**
+   `/content` is wiped on a full runtime *reset* (as opposed to a mere
+   frontend reconnect, which is harmless — see gotcha #5). The M3 fetch
+   checkpoint, its log file, and the shard output all live under
+   `/content/drive/MyDrive/lotti-llm-artifacts/` for this reason — a reset
+   loses at most the batch in flight, not hours of scanning.
 
 ## Repo is public
 
@@ -104,22 +162,22 @@ CC-BY-NC-SA-4.0 dataset itself (`data/` is gitignored and nothing under it
 has ever been committed) — see the license note in README.md for the
 implication this still has for anything trained *on* the data.
 
-## M3 kickoff checklist (what's being worked on right now)
+## M3 kickoff checklist
 
-- [ ] Empirically raise `micro_batch_size` in `configs/pretrain.yaml` — test
-  a few values against real GPU memory (started at 4, ~10.5GB used out of
-  96GB, so there's room for a large increase) rather than guessing.
-- [ ] Fetch + tokenize a much larger training shard than the M2 smoke
-  test's ~10k animations. Bottlenecked by the `datasets-server` throughput
-  issue above — plan for this to take a while, and prefer running it as a
-  background process on the Colab VM (`nohup ... &`, log to a file, poll
-  the log) over a single blocking cell, so a long fetch doesn't require
-  continuously watching the notebook.
-- [ ] Mount Google Drive and point `checkpoint_dir` at it before any long
-  training run — the M2 smoke test used a local `/content` checkpoint dir,
-  which does *not* survive a runtime reset (only reconnects survive it).
-  This is the difference between "disconnect is an inconvenience" and
-  "disconnect loses the whole run."
+- [x] Empirically raise `micro_batch_size` — measured 16/24/32, settled on
+  24 (see "Key decisions" above).
+- [x] Mount Google Drive; all M3 artifacts (fetch checkpoint, log, shard
+  output, and `checkpoint_dir` in `configs/pretrain.yaml`) point at
+  `/content/drive/MyDrive/lotti-llm-artifacts/`.
+- [x] Kick off the large fetch+tokenize as a resumable background process
+  (see "Status" section at the top — running as of this writing).
+- [ ] **Not started yet**: the actual M3 training run
+  (`lottiegpt.training.pretrain --shard-dir .../shards/m3 --checkpoint-dir
+  .../checkpoints/pretrain`), once the fetch above finishes. Use
+  `configs/pretrain.yaml`'s `max_steps`/`eval_every` as a starting point,
+  adjust `max_steps` upward if the corpus ends up smaller/larger than the
+  150k target changes the compute-optimal token budget (see the plan's
+  original ~20 tokens/param Chinchilla-style estimate).
 - [ ] Once training is running for real, watch the JSON-validity-rate eval
   metric (`training/eval.py`), not just loss — loss dropping fast on a
   small/repetitive corpus doesn't by itself confirm the model is learning
